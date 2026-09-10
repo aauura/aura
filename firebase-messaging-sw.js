@@ -22,13 +22,18 @@ firebase.initializeApp({
 const messaging = firebase.messaging();
 
 messaging.onBackgroundMessage((payload) => {
-  const title = (payload.notification && payload.notification.title) || 'Aura';
-  const body = (payload.notification && payload.notification.body) || '';
+  // a Cloud Function manda só "data" (não "notification") de propósito — se
+  // mandasse os dois, o Chrome/Android mostra a notificação sozinho E essa
+  // função também mostra a dela, duplicando. Com só "data", quem decide
+  // mostrar é sempre esse código aqui, uma vez só.
+  const data = payload.data || {};
+  const title = data.title || 'Aura';
+  const body = data.body || '';
   const options = {
     body,
     icon: '/icon-192.png', // troque pelo caminho real do ícone do app, se tiver um arquivo separado
     badge: '/icon-192.png',
-    data: payload.data || {},
+    data,
   };
   self.registration.showNotification(title, options);
 });
