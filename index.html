@@ -5449,6 +5449,16 @@ window.addEventListener('aura-firebase-ready', () => {
     if(viewKey !== lastRenderedViewKey){
       window.scrollTo(0, 0);
       if(document.scrollingElement) document.scrollingElement.scrollTop = 0;
+      // remove qualquer modal/overlay que tenha ficado aberto de antes de navegar
+      // pra essa tela nova — os modais (.modal-bg) são anexados direto no <body>,
+      // fora do #app, então eles NÃO somem sozinhos quando o app troca de tela
+      // (ex: sessão expira / faz logout com um modal aberto, ou clica em algo
+      // dentro de um modal que navega pra outro lugar). Se um modal ficar
+      // "esquecido" assim, ele é um bloco fixed cobrindo a tela inteira (mesmo
+      // quase transparente) e trava TODOS os cliques da tela de baixo, inclusive
+      // as caixas de texto do login — por isso limpa aqui, sempre que a tela
+      // realmente muda.
+      document.querySelectorAll('.modal-bg').forEach(el => el.remove());
     }
     lastRenderedViewKey = viewKey;
     if(view.name === 'loading') return renderLoading();
