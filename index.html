@@ -24,9 +24,10 @@
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
   :root{
-    --bg:#0A0A0B;
-    --bg-elevated:#101011;
-    --card:#131314;
+    /* preto de verdade (era um cinza bem escuro antes) — pedido explícito */
+    --bg:#000000;
+    --bg-elevated:#0A0A0A;
+    --card:#121213;
     --card-hover:#1B1B1D;
     --border:rgba(255,255,255,0.08);
     --border-strong:rgba(255,255,255,0.16);
@@ -286,13 +287,18 @@
       -webkit-backdrop-filter:blur(14px);
       box-shadow:none;
       z-index:40;
-      /* encolhe um pouco ao rolar pra baixo, volta ao normal ao rolar pra
-         cima — ver setupTopBarAutoHide, que já escuta o scroll e alterna
-         essa classe junto com a do cabeçalho */
+      /* some da tela ao rolar pra baixo, volta ao rolar pra cima — ver
+         setupTopBarAutoHide, que já escuta o scroll e alterna essa classe
+         junto com a do cabeçalho */
       transition:transform 0.22s ease;
       transform-origin:center bottom;
     }
-    .sidebar.dock-compact{ transform:scale(0.94); }
+    /* rolando pra baixo o menu some de vez (sai pra fora da tela), rolando
+       pra cima ele volta — ver setupTopBarAutoHide */
+    .sidebar.dock-compact{ transform:translateY(120%); }
+    /* com o teclado aberto o menu não tem por que aparecer (ele ficava
+       flutuando bem em cima da caixa de digitar/comentar, sobrepondo tudo) */
+    body.kb-open .sidebar{ display:none; }
     .sidebar-logo{ display:none; }
     .side-link-settings{ display:none; }
     .side-link[data-nav="discover"]{ display:none; }
@@ -357,13 +363,13 @@
   .feed-icon-btn{
     background:none; border:none; color:var(--text-faint); cursor:pointer;
     display:inline-flex; align-items:center; gap:5px;
-    padding:7px 9px; border-radius:13px; transition:all .15s ease;
-    font-family:'Manrope', sans-serif; font-size:12.5px; font-weight:600;
+    padding:6px 8px; border-radius:13px; transition:all .15s ease;
+    font-family:'Manrope', sans-serif; font-size:12px; font-weight:600;
   }
-  /* botões de engajamento (enviar/farmar/comentar/avaliar) e a nota do post,
-     um pouco maiores — pedido explícito, "minimamente" maior */
-  .feed-icon-btn svg{ width:20px; height:20px; }
-  .feed-footer-left .score-chip{ font-size:13.5px !important; font-weight:800; }
+  /* botões de engajamento (enviar/farmar/comentar/avaliar) e a nota do post —
+     tinham ficado grandes demais, voltou um pouco menor */
+  .feed-icon-btn svg{ width:18px; height:18px; }
+  .feed-footer-left .score-chip{ font-size:12.5px !important; font-weight:800; }
   .feed-icon-btn:hover{ background:var(--bg-elevated); color:var(--text); }
   .feed-icon-btn.active{ color:var(--violet); }
   .feed-icon-btn-count{ color:var(--text-faint); font-weight:400; }
@@ -654,7 +660,9 @@
   .story-cam-shutter:active{ transform:translateX(-50%) scale(0.92); }
   /* espelha o preview quando é a câmera frontal (selfie) — do jeito que a
      pessoa se vê no espelho, igual todo app de câmera faz */
-  .story-editor-stage video.story-cam-mirrored{ transform:scaleX(-1); }
+  /* espelho + zoom digital do preview agora são aplicados via JS direto no
+     video.style.transform (applyVideoTransform), pra combinar os dois numa
+     transform só sem um sobrescrever o outro */
   /* barra preta sólida embaixo da câmera — fica fora da foto (não é mais um
      conjunto de botões flutuando por cima), com as abas em cima e os
      controles de captura embaixo */
@@ -3674,26 +3682,18 @@ window.addEventListener('aura-firebase-ready', () => {
     let editingLayerId = null; // id da camada de texto sendo digitada agora (ou null)
     let pinchStartDist = null; // distância inicial do beliscão (pinça) pra zoom
     let pinchStartZoom = null;
-    // manda um applyConstraints de zoom por vez — disparar vários em cima
-    // uns dos outros (um por cada touchmove, que dispara MUITAS vezes por
-    // segundo) fazia a câmera de alguns celulares travar/congelar a prévia,
-    // porque o navegador tenta renegociar o stream de vídeo a cada chamada.
-    // Aqui só deixa uma pendente por vez e guarda só o valor mais recente
-    // pedido enquanto isso, aplicando ele assim que a anterior terminar
-    let zoomApplyPending = false, zoomApplyQueued = null;
-    function applyZoomThrottled(track, z){
-      zoomApplyQueued = z;
-      if(zoomApplyPending) return;
-      const run = () => {
-        if(zoomApplyQueued === null) return;
-        const value = zoomApplyQueued;
-        zoomApplyQueued = null;
-        zoomApplyPending = true;
-        track.applyConstraints({ advanced: [{ zoom: value }] })
-          .catch(() => {})
-          .finally(() => { zoomApplyPending = false; run(); });
-      };
-      run();
+    // zoom "digital" via CSS transform no próprio <video> do preview, em vez
+    // de mandar applyConstraints({zoom}) pro hardware da câmera a cada
+    // movimento do dedo — era isso que piscava/travava a tela (o navegador
+    // tenta renegociar o stream de vídeo a cada chamada, e isso não é
+    // instantâneo). Escalando o preview com CSS o zoom acompanha o dedo AO
+    // VIVO, sem nenhuma piscada, igual o Instagram — e na hora de tirar a
+    // foto, recorta o frame no mesmo nível de zoom (ver shutterBtn abaixo)
+    let currentZoom = 1;
+    const MAX_ZOOM = 3;
+    function applyVideoTransform(){
+      const mirror = currentFacing === 'user' ? 'scaleX(-1) ' : '';
+      video.style.transform = mirror + 'scale(' + currentZoom + ')';
     }
     const video = document.getElementById('storyCameraVideo');
     const pickedImg = document.getElementById('storyPickedImg');
@@ -3772,8 +3772,9 @@ window.addEventListener('aura-firebase-ready', () => {
         }
         video.srcObject = stream;
         video.style.display = 'block';
+        currentZoom = 1;
         // espelha o preview na câmera frontal (selfie), igual todo app de câmera
-        video.classList.toggle('story-cam-mirrored', currentFacing === 'user');
+        applyVideoTransform();
         pickedImg.style.display = 'none';
         setMode('camera');
       }catch(e){
@@ -3800,23 +3801,18 @@ window.addEventListener('aura-firebase-ready', () => {
     stage.addEventListener('touchstart', (e) => {
       if(e.touches.length !== 2 || !stream) return;
       e.preventDefault();
-      const track = stream.getVideoTracks()[0];
-      const caps = track && track.getCapabilities ? track.getCapabilities() : null;
-      if(!caps || !caps.zoom) return;
       pinchStartDist = touchDist(e.touches);
-      pinchStartZoom = track.getSettings().zoom || caps.zoom.min;
+      pinchStartZoom = currentZoom;
     }, { passive: false });
     stage.addEventListener('touchmove', (e) => {
       if(e.touches.length !== 2) return;
       e.preventDefault();
       if(pinchStartDist === null || !stream) return;
-      const track = stream.getVideoTracks()[0];
-      const caps = track && track.getCapabilities ? track.getCapabilities() : null;
-      if(!caps || !caps.zoom) return;
       const scale = touchDist(e.touches) / pinchStartDist;
       let z = pinchStartZoom * scale;
-      z = Math.max(caps.zoom.min, Math.min(caps.zoom.max, z));
-      applyZoomThrottled(track, z);
+      z = Math.max(1, Math.min(MAX_ZOOM, z));
+      currentZoom = z;
+      applyVideoTransform();
     }, { passive: false });
     stage.addEventListener('touchend', (e) => {
       if(e.touches.length < 2) pinchStartDist = null;
@@ -3853,7 +3849,14 @@ window.addEventListener('aura-firebase-ready', () => {
         ctx.translate(canvas.width, 0);
         ctx.scale(-1, 1);
       }
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      // recorta o centro do frame de acordo com o zoom digital escolhido no
+      // pinça — sem isso a foto salva saía sempre sem zoom nenhum, só o
+      // preview na tela é que parecia zoomado
+      const cropW = video.videoWidth / currentZoom;
+      const cropH = video.videoHeight / currentZoom;
+      const cropX = (video.videoWidth - cropW) / 2;
+      const cropY = (video.videoHeight - cropH) / 2;
+      ctx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, canvas.width, canvas.height);
       pickedImg.src = canvas.toDataURL('image/jpeg', 0.85);
       pickedImg.style.display = 'block';
       video.style.display = 'none';
@@ -9561,24 +9564,32 @@ window.addEventListener('aura-firebase-ready', () => {
     // mensagens que não enche a tela) já mexia na variável e fazia a caixa
     // de digitar pular sozinha mesmo sem o teclado estar aberto
     let hasFocusedField = false;
+    // kb-open agora liga/desliga NA HORA do foco/desfoque, em vez de esperar
+    // o resize do visualViewport calcular um inset "grande o bastante" —
+    // esse cálculo variava demais de aparelho pra aparelho (em alguns o
+    // vão de baixo nunca sumia porque o inset nunca passava do limiar), então
+    // a folguinha de baixo (pro home indicator) e o menu de baixo agora
+    // reagem direto ao campo estar ou não focado, que é bem mais confiável
     document.addEventListener('focusin', (e) => {
-      if(e.target.matches && e.target.matches('input, textarea, [contenteditable="true"]')) hasFocusedField = true;
+      if(e.target.matches && e.target.matches('input, textarea, [contenteditable="true"]')){
+        hasFocusedField = true;
+        document.body.classList.add('kb-open');
+      }
     });
     document.addEventListener('focusout', (e) => {
-      if(e.target.matches && e.target.matches('input, textarea, [contenteditable="true"]')) hasFocusedField = false;
+      if(e.target.matches && e.target.matches('input, textarea, [contenteditable="true"]')){
+        hasFocusedField = false;
+        document.body.classList.remove('kb-open');
+        document.documentElement.style.setProperty('--keyboard-inset', '0px');
+      }
     });
     function syncKeyboardInset(){
       if(!hasFocusedField){
         document.documentElement.style.setProperty('--keyboard-inset', '0px');
-        document.body.classList.remove('kb-open');
         return;
       }
       const inset = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
       document.documentElement.style.setProperty('--keyboard-inset', inset + 'px');
-      // só considera o teclado "de fato aberto" (pra tirar a folguinha de baixo,
-      // que existe pro home indicator) quando o inset é grande o bastante pra
-      // ser teclado de verdade, não só um resize pequeno da barra de endereço
-      document.body.classList.toggle('kb-open', inset > 60);
     }
     vv.addEventListener('resize', syncKeyboardInset);
     vv.addEventListener('scroll', syncKeyboardInset);
