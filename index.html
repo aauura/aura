@@ -9,7 +9,7 @@
      está publicado de verdade no servidor. IMPORTANTE: sempre que eu (Claude)
      entregar uma atualização nova desse arquivo, preciso mudar esse valor
      aqui, senão essa checagem não detecta nada de novo. -->
-<meta name="aura-build" content="20260921-2" />
+<meta name="aura-build" content="20260922-16" />
 <script>
 // autocorreção de cache: em alguns celulares (principalmente apps "adicionados
 // à tela de início"), o navegador guarda uma cópia velha da página e não busca
@@ -517,16 +517,65 @@
   .stories-bar{ display:flex; gap:14px; overflow-x:auto; padding:14px 2px 8px; -webkit-overflow-scrolling:touch; scrollbar-width:none; }
   .stories-bar::-webkit-scrollbar{ display:none; }
   .story-bubble{ display:flex; flex-direction:column; align-items:center; gap:4px; flex-shrink:0; width:74px; cursor:pointer; position:relative; }
-  .story-ring{ width:70px; height:70px; border-radius:50%; display:flex; align-items:center; justify-content:center; padding:2.5px; border:2.5px solid var(--border-strong); box-sizing:border-box; }
-  .story-ring.unseen{ border-color:var(--violet); background:linear-gradient(45deg, var(--violet), #b48cff); }
-  .story-ring.seen{ border-color:var(--border-strong); }
-  .story-ring-empty{ border-style:dashed; }
-  .story-ring .aura-ring{ border-color:var(--bg); }
+  /* overflow:hidden + border-radius no MESMO elemento que também é flex,
+     tem padding, borda E background-gradient é exatamente a combinação que
+     o WebKit (Safari/iOS) não clipa direito — sobra sempre um pedacinho reto
+     (o "canto" do retângulo de fundo) numa borda do círculo, por mais que
+     overflow:hidden esteja lá. A solução de verdade não é tentar clipar
+     esse elemento cheio de coisas: é tirar o degradê dele e jogar num
+     ::before separado, simples (só position:absolute + border-radius +
+     background, nada de flex/padding/borda junto) — um elemento "burro"
+     desses o Safari SEMPRE clipa certinho em círculo perfeito.
+     Importante: nem o ::before nem o avatar (.aura-ring) usam z-index aqui —
+     de propósito. Só a ORDEM no HTML (::before antes do avatar) já garante
+     que o avatar fica por cima do degradê; usar z-index positivo nesses dois
+     fazia eles "furarem" pra fora do story-ring e ficar por cima até do
+     botão "+" (que é irmão do anel, não filho) — por isso o "+" sumia atrás
+     do anel. Sem z-index aqui, tudo respeita a ordem natural e o "+" (que
+     vem depois no HTML) sempre fica por cima, igual no Instagram. */
+  .story-ring{ position:relative; width:70px; height:70px; border-radius:50%; overflow:hidden; display:flex; align-items:center; justify-content:center; box-sizing:border-box; padding:3.5px; }
+  /* degradê do Instagram DE VERDADE, na técnica certa — o efeito clássico
+     dele não é linear nem conic, é um radial-gradient ancorado fora do
+     centro (perto do canto de baixo/esquerda), com uns 5 pontos de cor bem
+     próximos uns dos outros. É essa técnica específica que dá aquele
+     "estouro de sol" nítido e vibrante, mesmo bem pequeno — por isso as
+     tentativas com linear/conic-gradient nunca chegavam perto.
+     Cores: paleta vaporwave/cyberpunk pedida — começa no roxo do próprio
+     app (--violet, #7C3AED) EM CIMA e evolui pra magenta/rosa vibrante
+     embaixo. O ponto de ancoragem do radial (circle at X% Y%) é onde a
+     PRIMEIRA cor (0%) fica concentrada — por isso ancorado perto do topo
+     (Y negativo) pra jogar o roxo pra cima, ao contrário da receita
+     original do Insta que ancora embaixo. */
+  .story-ring.unseen::before{
+    content:'';
+    position:absolute;
+    inset:0;
+    border-radius:50%;
+    background:radial-gradient(circle at 70% -10%, #7C3AED 0%, #7C3AED 8%, #C026D3 45%, #EC4899 70%, #FF6EC7 95%);
+    /* mask redundante de propósito: além do border-radius, isso força o
+       Safari a usar o pipeline de máscara dele pra recortar o círculo, que
+       é o caminho que realmente não deixa vazar nenhum pixel reto na borda. */
+    -webkit-mask-image:-webkit-radial-gradient(circle, #fff 100%, #000 100%);
+  }
+  /* a "distância da foto" (o gap entre o degradê e o avatar) agora vem do
+     border-width que o avatarHtml() põe inline no .aura-ring (ver
+     ringOverride ali) — uma regra aqui no <style> NUNCA conseguiria
+     sobrescrever esse inline style, então não adianta tentar. */
+  .story-ring .aura-ring{ position:relative; }
+  /* "seen" e vazio usam borda sólida normal (sem gradiente, sem o bug do
+     Safari) — padding+borda somam os mesmos 5px pra manter o avatar do
+     mesmo tamanho nos três estados. */
+  .story-ring.seen{ border:1.75px solid var(--border-strong); padding:1.75px; }
+  .story-ring-empty{ border:1.75px dashed var(--border-strong); padding:1.75px; }
   .story-bubble-name{ font-size:11px; color:var(--text-muted); max-width:74px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .story-add-badge{
     position:absolute; bottom:22px; right:-2px; width:28px; height:28px; border-radius:50%;
     background:var(--violet); border:2.5px solid var(--bg); color:#fff; display:flex; align-items:center;
     justify-content:center; padding:0; cursor:pointer;
+    /* z-index explícito e alto de propósito: garante que o botão de
+       adicionar story SEMPRE fica por cima do anel/degradê, não importa
+       a ordem no HTML nem o contexto de empilhamento. */
+    z-index:5;
   }
   .story-add-badge svg{ width:16px; height:16px; }
   /* "Destaques" (stories fixados no perfil) — mesma ideia visual da barrinha
@@ -828,21 +877,6 @@
        fixa + a distância dela até o rodapé, então o último comentário sempre
        fica visível ACIMA da caixa, nunca escondido atrás dela. */
     #postCommentsList{ padding-bottom:calc(150px + env(safe-area-inset-bottom)); }
-    /* mesmo padrão do chat 1-a-1 e da caixa de comentário: a caixa de
-       digitar do chat de grupo (que antes rolava junto com a página, dentro
-       da aba "Chat" do grupo, deixando um vão vazio embaixo e outro enorme
-       quando o teclado abria) agora fica fixa em cima do menu de baixo, e
-       some pro rés-do-teclado quando ele abre */
-    #groupChatComposeRow{
-      position:fixed; left:0; right:0; bottom:calc(74px + env(safe-area-inset-bottom));
-      background:var(--bg); padding:10px 16px; z-index:35;
-      margin-bottom:var(--keyboard-inset, 0px);
-      transition:bottom 0.15s ease;
-    }
-    body.kb-open #groupChatComposeRow{ bottom:0; }
-    /* reserva embaixo da lista de mensagens do chat de grupo pra última
-       mensagem não ficar escondida atrás da caixa fixa acima */
-    #groupChatMessages{ padding-bottom:calc(150px + env(safe-area-inset-bottom)); max-height:none; }
   }
 
   /* ---- Mensagens diretas ---- */
@@ -893,7 +927,12 @@
   .chat-messages{
     display:flex; flex-direction:column; gap:8px;
     min-height:200px; max-height:55vh; max-height:55dvh; overflow-y:auto;
-    padding:6px 2px 16px;
+    padding:6px 10px 16px 2px;
+    /* reserva uma faixa pra barrinha de scroll não ficar "por baixo" das
+       mensagens — sem isso, em alguns navegadores os balões (principalmente
+       as fotos, que vão quase até a borda) cobriam a barrinha em vez dela
+       ficar visível por cima, do lado direito */
+    scrollbar-gutter: stable;
   }
   /* na tela de conversa 1-a-1 (não no chat de grupo, que fica dentro de uma
      aba) a lista de mensagens deve crescer pra ocupar a tela toda e a caixa
@@ -903,27 +942,31 @@
   .chat-row{ display:flex; }
   .chat-row.mine{ justify-content:flex-end; }
   .chat-bubble{
-    max-width:75%; padding:10px 14px; border-radius:13px;
-    background:var(--card); color:var(--text); font-size:14px; line-height:1.4;
+    max-width:75%; padding:11px 16px; border-radius:19px;
+    background:var(--card); color:var(--text); font-size:14.5px; line-height:1.4;
     word-wrap:break-word; white-space:pre-wrap;
   }
-  .chat-row.mine .chat-bubble{ background:var(--violet); color:#fff; border-bottom-right-radius:4px; }
-  .chat-row:not(.mine) .chat-bubble{ border-bottom-left-radius:4px; }
+  .chat-row.mine .chat-bubble{ background:var(--violet); color:#fff; border-bottom-right-radius:5px; }
+  .chat-row:not(.mine) .chat-bubble{ border-bottom-left-radius:5px; }
+  /* cartão de "frequência"/story compartilhado no chat — só contorno, sem
+     bloco de cor por trás (pedido explícito), e um tamanho fixo mais
+     vertical/estreito em vez de esticar até 75% da largura da conversa */
   .chat-shared-post{
-    max-width:75%; padding:10px; border-radius:13px; cursor:pointer;
-    background:var(--card); border:1px solid var(--border);
+    max-width:220px; padding:10px; border-radius:16px; cursor:pointer;
+    background:none; border:1.5px solid var(--border);
   }
-  .chat-shared-post:hover{ background:var(--bg-elevated); }
+  .chat-shared-post:hover{ background:rgba(127,127,127,0.08); }
   .chat-shared-post-missing{ color:var(--text-faint); font-size:13px; cursor:default; }
-  .chat-shared-post-missing:hover{ background:var(--card); }
+  .chat-shared-post-missing:hover{ background:none; }
   .chat-shared-post-head{ display:flex; align-items:center; gap:6px; font-size:12.5px; font-weight:700; color:var(--text); margin-bottom:6px; }
   .chat-shared-post-text{ font-size:13.5px; color:var(--text-muted); line-height:1.4; }
-  .chat-shared-post-image{ width:100%; border-radius:9px; margin-top:6px; display:block; max-height:200px; object-fit:cover; }
+  .chat-shared-post-image{ width:100%; border-radius:9px; margin-top:6px; display:block; max-height:280px; object-fit:cover; }
   /* balão de resposta/reação a um story — guarda uma cópia da imagem do
      story no momento do envio (não tenta reabrir o story depois, já que ele
-     pode ter expirado ou sido apagado até a outra pessoa ler a mensagem) */
-  .chat-shared-story{ max-width:75%; padding:8px; border-radius:13px; background:var(--card); border:1px solid var(--border); }
-  .chat-shared-story-image{ width:120px; border-radius:9px; display:block; max-height:160px; object-fit:cover; }
+     pode ter expirado ou sido apagado até a outra pessoa ler a mensagem) —
+     mesmo tratamento: só contorno, mais vertical/estreito */
+  .chat-shared-story{ max-width:220px; padding:8px; border-radius:16px; background:none; border:1.5px solid var(--border); }
+  .chat-shared-story-image{ width:100%; border-radius:9px; display:block; max-height:280px; object-fit:cover; }
   .chat-shared-story-label{ font-size:12px; color:var(--text-faint); margin-top:6px; }
   /* reação pura a um story (sem texto): sem caixa nenhuma por trás, igual
      Instagram — só a foto, com o emoji "flutuando" sobreposto no canto */
@@ -935,8 +978,12 @@
      só o coração flutuando, com um vão estranho no lugar da foto */
   .chat-story-reaction-plain{ position:relative; width:120px; min-height:120px; flex-shrink:0; background:var(--card); border-radius:9px; }
   .chat-story-reaction-plain .chat-shared-story-image{ margin:0; width:100%; height:100%; position:absolute; inset:0; }
+  /* o emoji fica RENTE à foto (encostado na borda de baixo), não pendurado
+     pra fora dela — do jeito antigo (pendurado 9px pra fora), quando essa
+     mensagem vinha logo depois de outra, o emoji "vazava" pra cima da
+     mensagem seguinte */
   .chat-story-reaction-emoji-badge{
-    position:absolute; bottom:-9px; left:-9px; font-size:27px; line-height:1;
+    position:absolute; bottom:8px; left:8px; font-size:26px; line-height:1;
     filter:drop-shadow(0 2px 5px rgba(0,0,0,0.55));
   }
   .chat-bubble-image{ padding:5px; max-width:65%; }
@@ -979,6 +1026,13 @@
     background:none; border:none; color:var(--text-muted);
   }
   .chat-compose .icon-btn:hover{ background:none; border:none; color:var(--text); }
+  /* botão "+" de anexar — igual Instagram/Threads: um círculo cheio com o
+     "+" dentro, em vez de um ícone de imagem solto */
+  .chat-compose-plus{
+    background:var(--bg-elevated) !important; color:var(--text) !important;
+    width:38px !important; height:38px !important; flex-shrink:0;
+  }
+  .chat-compose-plus:hover{ background:var(--border) !important; }
   #chatSendBtn, #groupChatSendBtn{ color:var(--violet); }
   #chatSendBtn svg, #groupChatSendBtn svg{ width:23px; height:23px; }
   /* deixa a barrinha de digitar (input + botões) da mesma altura dos ícones
@@ -998,7 +1052,12 @@
   /* reações com emoji nas mensagens — chip pequeno grudado no canto de baixo
      da bolha, igual WhatsApp/iMessage. Fica dentro do msg-col pra acompanhar
      o alinhamento (direita quando é minha mensagem, esquerda quando não é). */
-  .chat-msg-reactions{ display:flex; gap:2px; margin-top:-8px; position:relative; z-index:1; }
+  /* o chip de reação "sobe" um pouco pra grudar no canto da PRÓPRIA bolha —
+     mas como o espaço entre uma mensagem e a próxima é só 8px (gap do
+     .chat-messages), subir os mesmos 8px cancelava esse espaço inteiro e o
+     chip acabava caindo em cima da bolha de baixo. Subindo só um pouco menos
+     (4px) sobra uma folguinha e ele não invade mais a mensagem seguinte. */
+  .chat-msg-reactions{ display:flex; gap:2px; margin-top:-4px; margin-bottom:2px; position:relative; z-index:1; }
   .chat-row.mine .chat-msg-reactions{ justify-content:flex-end; margin-right:4px; }
   .chat-row:not(.mine) .chat-msg-reactions{ margin-left:4px; }
   .chat-msg-reaction-chip{ background:var(--bg-elevated); border:1.5px solid var(--bg); border-radius:10px; font-size:11px; padding:1px 5px; line-height:1.4; }
@@ -1016,10 +1075,32 @@
   .chat-recording-send{ background:var(--violet); color:#fff; border:none; }
   .chat-recording-send svg{ width:22px; height:22px; }
   #chatMicBtn.recording{ color:var(--rose); }
-  /* mensagem de áudio — usa o player nativo do navegador (funciona em
-     qualquer aparelho sem precisar montar um tocador do zero); só estiliza a
-     largura/margens pra caber igual as outras bolhas */
-  .chat-audio-bubble audio{ width:220px; max-width:60vw; height:36px; }
+  /* mensagem de áudio — tocador próprio (ver initAudioPlayers), não usa o
+     <audio controls> nativo do navegador: o nativo colava um fundo clarinho
+     e um menu de "..." por dentro da bolha, que não tem como tirar só com
+     CSS (principalmente no iPhone) — assim fica só a cor certa, sem nada
+     "vazando" de dentro */
+  .chat-audio-bubble{
+    background:var(--card); border-radius:20px; padding:8px 14px 8px 8px;
+    display:inline-flex; align-items:center; gap:9px; max-width:100%; box-sizing:border-box;
+  }
+  .chat-row.mine .chat-audio-bubble{ background:var(--violet); }
+  .chat-audio-play-btn{
+    width:34px; height:34px; border-radius:50%; flex-shrink:0; border:none; cursor:pointer;
+    display:flex; align-items:center; justify-content:center; padding:0;
+    background:var(--bg-elevated); color:var(--text);
+  }
+  .chat-row.mine .chat-audio-play-btn{ background:rgba(255,255,255,0.25); color:#fff; }
+  .chat-audio-play-btn svg{ margin-left:2px; }
+  .chat-audio-track{
+    width:110px; height:3px; border-radius:2px; background:rgba(127,127,127,0.3);
+    position:relative; cursor:pointer;
+  }
+  .chat-row.mine .chat-audio-track{ background:rgba(255,255,255,0.32); }
+  .chat-audio-track-fill{ position:absolute; top:0; left:0; bottom:0; width:0%; border-radius:2px; background:var(--violet); }
+  .chat-row.mine .chat-audio-track-fill{ background:#fff; }
+  .chat-audio-time{ font-size:11.5px; color:var(--text-faint); font-variant-numeric:tabular-nums; flex-shrink:0; }
+  .chat-row.mine .chat-audio-time{ color:rgba(255,255,255,0.85); }
   h1,h2,h3{font-family:'Manrope', sans-serif; margin:0;}
   .eyebrow{
     font-family:'Manrope', sans-serif;
@@ -2221,6 +2302,12 @@ window.addEventListener('aura-firebase-ready', () => {
   const ICON_ARROW_LEFT = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.75" stroke-linecap="round" stroke-linejoin="round"><line x1="20" y1="12" x2="4" y2="12"/><polyline points="11 5 4 12 11 19"/></svg>';
   const ICON_EYE = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
   const ICON_MIC = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>';
+  // tocador de áudio das mensagens de voz é todo nosso (não usa o <audio
+  // controls> nativo do navegador) — assim a bolha fica só roxa/cinza, sem
+  // aquele fundo clarinho + menu de "..." que o player nativo do iOS/Android
+  // cola por dentro e que não dá pra tirar só no CSS
+  const ICON_AUDIO_PLAY = '<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M6 4l15 8-15 8V4z"/></svg>';
+  const ICON_AUDIO_PAUSE = '<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="4" width="5" height="16" rx="1"/><rect x="14" y="4" width="5" height="16" rx="1"/></svg>';
   const ICON_EYE_OFF = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-7 0-11-8-11-8a18.5 18.5 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
   const ICON_CHEVRON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>';
   const ICON_REPLY_ARROW = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;"><polyline points="9 10 4 15 9 20"/><path d="M20 4v7a4 4 0 0 1-4 4H4"/></svg>';
@@ -2634,7 +2721,7 @@ window.addEventListener('aura-firebase-ready', () => {
     el.classList.add('pulse-pop');
   }
 
-  function avatarHtml(p, size, showOnline){
+  function avatarHtml(p, size, showOnline, ringOverride){
     size = size || 64;
     // avatarHtml é de longe a tag <img> mais repetida na tela inteira (todo
     // post, todo comentário, toda linha de lista tem uma) — sem
@@ -2648,12 +2735,17 @@ window.addEventListener('aura-firebase-ready', () => {
     // antes o anel ao redor da foto ficava dourado (top 3) ou roxo (4º-10º)
     // pra marcar quem está no Top 10 do ranking global de aura — removido a
     // pedido: agora todo mundo usa a mesma borda neutra, ranqueado ou não.
-    const ringColor = 'var(--border-strong)';
-    const ringWidth = '1px';
+    // ringOverride existe pra casos como o anel de story: como esse estilo
+    // vai inline (style="border-color:...;border-width:..."), ele SEMPRE
+    // ganha de qualquer regra no <style> (inline bate qualquer seletor de
+    // classe) — então tentar sobrescrever isso via CSS externo nunca
+    // funciona de verdade, precisa vir por aqui.
+    const ringColor = (ringOverride && ringOverride.color) || 'var(--border-strong)';
+    const ringWidth = (ringOverride && ringOverride.width) || '1px';
     const onlineDot = (showOnline && p && p.id && onlineIds.has(p.id))
       ? `<span class="online-dot" style="width:${Math.max(9, Math.round(size * 0.24))}px;height:${Math.max(9, Math.round(size * 0.24))}px;" title="Online agora"></span>`
       : '';
-    return `<div class="aura-ring" style="width:${size}px;height:${size}px;border-color:${ringColor};border-width:${ringWidth};">
+    return `<div class="aura-ring" style="width:${size}px;height:${size}px;border-color:${ringColor};border-width:${ringWidth};box-sizing:border-box;">
       <div style="width:100%;height:100%;border-radius:50%;overflow:hidden;">${inner}</div>
       ${onlineDot}
     </div>`;
@@ -3591,7 +3683,7 @@ window.addEventListener('aura-firebase-ready', () => {
     const others = groups.filter(g => g.authorId !== ME_ID);
     const myBubble = `
       <div class="story-bubble" id="myStoryBubble" data-story-open="${myGroup ? ME_ID : ''}">
-        <div class="story-ring ${myGroup ? (myGroup.hasUnseen ? 'unseen' : 'seen') : 'story-ring-empty'}">${avatarHtml(me, 65)}</div>
+        <div class="story-ring ${myGroup ? (myGroup.hasUnseen ? 'unseen' : 'seen') : 'story-ring-empty'}">${avatarHtml(me, 63, false, {color:'var(--bg)', width:'2.5px'})}</div>
         <button class="story-add-badge" id="storyAddBtn" title="Adicionar story">${ICON_PLUS}</button>
         <div class="story-bubble-name">Você</div>
       </div>`;
@@ -3600,7 +3692,7 @@ window.addEventListener('aura-firebase-ready', () => {
       if(!author) return '';
       return `
         <div class="story-bubble" data-story-open="${g.authorId}">
-          <div class="story-ring ${g.hasUnseen ? 'unseen' : 'seen'}">${avatarHtml(author, 65)}</div>
+          <div class="story-ring ${g.hasUnseen ? 'unseen' : 'seen'}">${avatarHtml(author, 63, false, {color:'var(--bg)', width:'2.5px'})}</div>
           <div class="story-bubble-name">${escapeHtml((author.username || author.name || '').slice(0, 10))}</div>
         </div>`;
     }).join('');
@@ -3728,7 +3820,7 @@ window.addEventListener('aura-firebase-ready', () => {
       const stories = highlight.storyIds.map(id => byId[id]).filter(Boolean);
       if(stories.length === 0){ showToast('Esse destaque não tem mais stories disponíveis.'); return; }
       const group = { authorId: userId, stories, hasUnseen: false };
-      storyViewerState = { groups: [group], groupIndex: 0, storyIndex: 0, timer: null, paused: false };
+      storyViewerState = { groups: [group], groupIndex: 0, storyIndex: 0, rafId: null, paused: false };
       renderStoryViewerOverlay();
     }catch(e){
       showToast('Não deu pra abrir o destaque. Tente de novo.');
@@ -3991,9 +4083,20 @@ window.addEventListener('aura-firebase-ready', () => {
     // (editingLayerId) vira um <div contenteditable>, sem arrastar; as outras
     // continuam arrastáveis por pointer events, igual antes
     function renderCamTextLayers(){
-      textLayersWrap.innerHTML = textLayers.map(l => `
-        <div class="story-edit-text-layer" data-layer-id="${l.id}" ${l.id === editingLayerId ? 'contenteditable="true"' : ''} style="left:${l.xPct}%; top:${l.yPct}%; color:${l.color};">${escapeHtml(l.text)}</div>
-      `).join('');
+      textLayersWrap.innerHTML = textLayers.map(l => {
+        // enquanto tá SENDO DIGITADA, a camada fica sempre centralizada — não
+        // no meio da FOTO inteira, mas no meio do espaço que sobra ACIMA do
+        // teclado (--keyboard-inset, o mesmo valor usado no chat), senão com
+        // o teclado aberto ela ficava perto demais da borda de baixo (ou
+        // escondida atrás dele), igual o Instagram já resolve. Só quando
+        // termina de editar (finishTextEditing) ela volta pra posição
+        // salva/arrastada (xPct/yPct).
+        const isEditing = l.id === editingLayerId;
+        const posStyle = isEditing
+          ? 'left:50%; top:calc((100% - var(--keyboard-inset, 0px)) / 2);'
+          : `left:${l.xPct}%; top:${l.yPct}%;`;
+        return `<div class="story-edit-text-layer" data-layer-id="${l.id}" ${isEditing ? 'contenteditable="true"' : ''} style="${posStyle} color:${l.color};">${escapeHtml(l.text)}</div>`;
+      }).join('');
       textLayersWrap.querySelectorAll('.story-edit-text-layer').forEach(el => {
         const layerId = Number(el.dataset.layerId);
         if(layerId === editingLayerId){
@@ -4006,6 +4109,14 @@ window.addEventListener('aura-firebase-ready', () => {
             // em vez de quebrar linha
             if(e.key === 'Enter'){ e.preventDefault(); finishTextEditing(); }
           });
+          // no celular, apertar "OK"/"concluído" no PRÓPRIO teclado (em vez do
+          // botão "Concluído" da tela) muitas vezes não dispara o Enter acima
+          // — o teclado só fecha, sem terminar a edição, e a pessoa tinha que
+          // apertar "Concluído" de novo, um passo a mais que o Instagram não
+          // pede. Como fechar o teclado SEMPRE dispara "blur" (esse sim é
+          // confiável em qualquer celular), tratando o blur como "terminei de
+          // escrever" cobre esse caso também — sem precisar dos dois toques.
+          el.addEventListener('blur', () => finishTextEditing());
           return;
         }
         let dragging = false;
@@ -4074,9 +4185,13 @@ window.addEventListener('aura-firebase-ready', () => {
       }
     }
     // conclui a digitação — some sozinha se ficar vazia, senão salva a
-    // posição/cor atual e volta a ficar arrastável
+    // posição/cor atual e volta a ficar arrastável. finishingTextEdit evita
+    // reentrância: o próprio "el.blur()" aqui dentro dispara o listener de
+    // "blur" adicionado em renderCamTextLayers (pra pegar o "OK" do teclado),
+    // que chamaria essa função de novo no meio da primeira execução.
+    let finishingTextEdit = false;
     function finishTextEditing(){
-      if(editingLayerId === null) return;
+      if(editingLayerId === null || finishingTextEdit) return;
       const id = editingLayerId;
       const layer = textLayers.find(l => l.id === id);
       const el = textLayersWrap.querySelector(`[data-layer-id="${id}"]`);
@@ -4085,6 +4200,7 @@ window.addEventListener('aura-firebase-ready', () => {
         showToast('Esse conteúdo não é permitido no Aura.', 3500);
         return; // continua editando pra pessoa corrigir o texto
       }
+      finishingTextEdit = true;
       // fecha o teclado de propósito ANTES de tirar o elemento da tela — sem
       // isso, em alguns celulares o teclado ficava aberto (ou reaparecia
       // sozinho) depois de trocar pro modo arrastável, e como o texto novo
@@ -4103,6 +4219,7 @@ window.addEventListener('aura-firebase-ready', () => {
       galleryBtn.style.display = '';
       setMode(mode);
       renderCamTextLayers();
+      finishingTextEdit = false;
     }
     // pointerdown (não click) de propósito: com o teclado aberto, tocar num
     // botão fora do campo às vezes faz o navegador processar o blur/fechar-
@@ -4232,6 +4349,10 @@ window.addEventListener('aura-firebase-ready', () => {
     storiesCache.unshift({ id: newId, ...storyData });
   }
   // ---------- visualizador de stories em tela cheia ----------
+  // nome/foto do grupo, guardados aqui pra o cabeçalho do chat de grupo (tela
+  // cheia) já poder mostrar alguma coisa antes do loadGroup() (assíncrono)
+  // terminar, e pra não precisar re-renderizar a casca inteira só por isso
+  const groupHeaderCache = {};
   let storyViewerState = null; // { groups, groupIndex, storyIndex, timer, paused }
   const STORY_DURATION_MS = 5000;
   const STORY_QUICK_REACTIONS = ['❤️', '😂', '😮', '😢', '👏', '🔥'];
@@ -4239,7 +4360,7 @@ window.addEventListener('aura-firebase-ready', () => {
     const groups = groupedStoriesForBar().filter(g => g.stories.length > 0);
     const groupIndex = groups.findIndex(g => g.authorId === authorId);
     if(groupIndex === -1) return;
-    storyViewerState = { groups, groupIndex, storyIndex: 0, timer: null, paused: false };
+    storyViewerState = { groups, groupIndex, storyIndex: 0, rafId: null, paused: false };
     renderStoryViewerOverlay();
   }
   function renderStoryViewerOverlay(){
@@ -4463,24 +4584,37 @@ window.addEventListener('aura-firebase-ready', () => {
     registerStoryView(story.id);
     startStoryProgress();
   }
+  // barrinha de progresso do story — antes rodava num setInterval de 50ms
+  // (só 20 atualizações por segundo), o que dava aquele efeito "travado",
+  // pouco fluido. requestAnimationFrame acompanha a taxa de atualização de
+  // verdade da tela (normalmente 60fps, ou mais em telas de 120Hz), então o
+  // preenchimento anda bem mais suave — sem mudar em nada a duração de cada
+  // story nem o jeito de pausar (segurar a tela) que já existia.
   function startStoryProgress(){
     const st = storyViewerState;
     if(!st) return;
-    if(st.timer) clearInterval(st.timer);
+    if(st.rafId) cancelAnimationFrame(st.rafId);
     const fillEl = document.getElementById('storyFill' + st.storyIndex);
     let elapsed = 0;
-    const stepMs = 50;
-    st.timer = setInterval(() => {
-      if(st.paused) return;
-      elapsed += stepMs;
-      if(fillEl) fillEl.style.width = Math.min(100, (elapsed / STORY_DURATION_MS) * 100) + '%';
-      if(elapsed >= STORY_DURATION_MS) stepStory(1);
-    }, stepMs);
+    let lastTs = null;
+    function tick(ts){
+      if(storyViewerState !== st) return; // story mudou/fechou nesse meio tempo
+      if(lastTs === null) lastTs = ts;
+      const delta = ts - lastTs;
+      lastTs = ts;
+      if(!st.paused){
+        elapsed += delta;
+        if(fillEl) fillEl.style.width = Math.min(100, (elapsed / STORY_DURATION_MS) * 100) + '%';
+        if(elapsed >= STORY_DURATION_MS){ stepStory(1); return; }
+      }
+      st.rafId = requestAnimationFrame(tick);
+    }
+    st.rafId = requestAnimationFrame(tick);
   }
   function stepStory(direction){
     const st = storyViewerState;
     if(!st) return;
-    if(st.timer){ clearInterval(st.timer); st.timer = null; }
+    if(st.rafId){ cancelAnimationFrame(st.rafId); st.rafId = null; }
     let { groupIndex, storyIndex, groups } = st;
     storyIndex += direction;
     if(storyIndex < 0){
@@ -4497,7 +4631,7 @@ window.addEventListener('aura-firebase-ready', () => {
     renderStoryViewerOverlay();
   }
   function closeStoryViewer(){
-    if(storyViewerState && storyViewerState.timer) clearInterval(storyViewerState.timer);
+    if(storyViewerState && storyViewerState.rafId) cancelAnimationFrame(storyViewerState.rafId);
     storyViewerState = null;
     const overlay = document.getElementById('storyViewerOverlay');
     if(overlay) overlay.remove();
@@ -5606,6 +5740,10 @@ window.addEventListener('aura-firebase-ready', () => {
     if(v.name === 'settings') return { name: 'profile', id: ME_ID };
     if(v.name === 'edit') return { name: 'settings' };
     if(v.name === 'saved') return { name: 'settings' };
+    // saindo da aba de chat (tela cheia) do grupo, volta pra página do grupo
+    // na aba de frequências — não faz sentido "voltar" direto pra lista de
+    // grupos, já que a pessoa nem estava vendo isso na tela
+    if(v.name === 'group' && (v.groupTab || 'feed') === 'chat') return { name: 'group', id: v.id, groupTab: 'feed' };
     if(v.name === 'group') return { name: 'groups' };
     return { name: 'home' };
   }
@@ -5619,11 +5757,18 @@ window.addEventListener('aura-firebase-ready', () => {
     // (a "back-row" com o ícone de seta) — não duplica com a do topo, senão
     // fica com duas setas empilhadas
     const hasOwnBackRow = view.name === 'insights';
-    // dentro de uma conversa (chat 1-a-1) não faz sentido mostrar o menu —
-    // fica mais parecido com um app de mensagens de verdade, tela cheia
-    const hideSidebar = view.name === 'chat';
     const isChatPage = view.name === 'chat';
+    // a aba de chat DENTRO de um grupo também vira tela cheia, do mesmo jeito
+    // que a conversa 1-a-1 — antes ela ficava espremida dentro da página do
+    // grupo (com a foto, descrição, abas etc. em cima), sobrando pouco espaço
+    // e a caixa de escrever nunca ficava de verdade grudada no rodapé
+    const isGroupChatPage = view.name === 'group' && (view.groupTab || 'feed') === 'chat';
+    // dentro de uma conversa (chat 1-a-1 ou chat de grupo) não faz sentido
+    // mostrar o menu — fica mais parecido com um app de mensagens de
+    // verdade, tela cheia
+    const hideSidebar = isChatPage || isGroupChatPage;
     const chatOther = isChatPage ? profiles[view.id] : null;
+    const groupChatHeaderInfo = isGroupChatPage ? (groupHeaderCache[view.id] || null) : null;
     app.innerHTML = `
       <div class="shell">
         ${hideSidebar ? '' : `<nav class="sidebar">
@@ -5663,9 +5808,19 @@ window.addEventListener('aura-firebase-ready', () => {
                   </div>
                 </div>
               </div>
+            ` : isGroupChatPage ? `
+              <div class="top-bar-chat-header">
+                <button class="arrow-btn-plain" id="topBarBackBtn" title="Voltar">${ICON_ARROW_LEFT}</button>
+                <div class="chat-header-info">
+                  <div id="groupChatHeaderAvatarWrap" style="width:34px;height:34px;border-radius:50%;overflow:hidden;flex-shrink:0;background:var(--card);">${groupChatHeaderInfo && groupChatHeaderInfo.photo ? `<img src="${groupChatHeaderInfo.photo}" style="width:100%;height:100%;object-fit:cover;" />` : ''}</div>
+                  <div>
+                    <div class="lbl" id="groupChatHeaderName" style="font-weight:600; color:var(--text);">${groupChatHeaderInfo ? escapeHtml(groupChatHeaderInfo.name) : 'Grupo'}</div>
+                  </div>
+                </div>
+              </div>
             ` : (isProfilePage || hasOwnBackRow) ? `<div></div>` : (isHomePage ? `<button class="top-bar-avatar top-bar-msg arrow-btn-plain top-bar-search-btn" data-nav="discover" title="Pesquisar">${ICON_SEARCH}</button>` : `<button class="top-bar-avatar top-bar-msg arrow-btn-plain" id="topBarBackBtn" title="Voltar">${ICON_ARROW_LEFT}</button>`)}
-            ${isProfilePage || isChatPage ? '' : `<button class="top-bar-logo" data-nav="home" title="Início"><img src="${LOGO_WORDMARK}" alt="Aura" /></button>`}
-            ${isProfilePage || isChatPage ? '' : `<button class="top-bar-search-mobile" data-nav="notifications" title="Notificações">${ICON_BELL}<span class="nav-badge" id="notifBadgeTopBar" style="${unreadNotifCount > 0 ? '' : 'display:none;'}">${badgeCountText(unreadNotifCount)}</span></button>`}
+            ${isProfilePage || isChatPage || isGroupChatPage ? '' : `<button class="top-bar-logo" data-nav="home" title="Início"><img src="${LOGO_WORDMARK}" alt="Aura" /></button>`}
+            ${isProfilePage || isChatPage || isGroupChatPage ? '' : `<button class="top-bar-search-mobile" data-nav="notifications" title="Notificações">${ICON_BELL}<span class="nav-badge" id="notifBadgeTopBar" style="${unreadNotifCount > 0 ? '' : 'display:none;'}">${badgeCountText(unreadNotifCount)}</span></button>`}
           </div>
           <div id="mainContentInner" style="${hideSidebar ? 'flex:1; display:flex; flex-direction:column; min-height:0;' : ''}"></div>
         </main>
@@ -7786,6 +7941,80 @@ window.addEventListener('aura-firebase-ready', () => {
     });
   }
 
+  function formatAudioDuration(totalSeconds){
+    const s = Math.max(0, Math.round(totalSeconds || 0));
+    return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+  }
+  // tocador de áudio das mensagens de voz, feito na mão (ver o "if(msg.audio)"
+  // dentro de chatBubbleHtml): um <audio> escondido controlado por um botão
+  // de play/pause + barrinha de progresso + tempo, pra bolha ficar só na cor
+  // certa (sem o fundo clarinho e o menu de "..." que o player nativo do
+  // navegador cola por dentro, e que não tem como tirar só no CSS).
+  // currentlyPlayingAudioEl garante que só toca um áudio de cada vez — tocar
+  // um novo pausa automaticamente o que já estava tocando.
+  let currentlyPlayingAudioEl = null;
+  function initAudioPlayers(container){
+    container.querySelectorAll('.chat-audio-bubble').forEach(bubble => {
+      if(bubble.dataset.audioBound) return;
+      bubble.dataset.audioBound = '1';
+      const audioEl = bubble.querySelector('audio');
+      const playBtn = bubble.querySelector('.chat-audio-play-btn');
+      const trackFill = bubble.querySelector('.chat-audio-track-fill');
+      const timeEl = bubble.querySelector('.chat-audio-time');
+      const track = bubble.querySelector('.chat-audio-track');
+      if(!audioEl || !playBtn) return;
+      audioEl.addEventListener('loadedmetadata', () => {
+        if(isFinite(audioEl.duration) && audioEl.duration > 0 && audioEl.paused) timeEl.textContent = formatAudioDuration(audioEl.duration);
+      });
+      // a barrinha NÃO anda mais só no evento "timeupdate" — o navegador só
+      // dispara ele umas 4 vezes por segundo, o que dava aquele efeito
+      // "travado"/pouco fluido. Enquanto o áudio tá tocando, um loop de
+      // requestAnimationFrame acompanha currentTime a cada quadro (~60fps),
+      // então o preenchimento anda liso de verdade.
+      let audioRafId = null;
+      function updateAudioProgress(){
+        if(isFinite(audioEl.duration) && audioEl.duration > 0){
+          trackFill.style.width = ((audioEl.currentTime / audioEl.duration) * 100) + '%';
+          timeEl.textContent = formatAudioDuration(audioEl.currentTime);
+        }
+        if(!audioEl.paused && !audioEl.ended) audioRafId = requestAnimationFrame(updateAudioProgress);
+      }
+      audioEl.addEventListener('timeupdate', () => {
+        if(audioEl.paused) updateAudioProgress(); // barrinha some se pausar/soltar o dedo na track
+      });
+      audioEl.addEventListener('ended', () => {
+        if(audioRafId) cancelAnimationFrame(audioRafId);
+        trackFill.style.width = '0%';
+        timeEl.textContent = isFinite(audioEl.duration) ? formatAudioDuration(audioEl.duration) : '0:00';
+      });
+      audioEl.addEventListener('play', () => {
+        playBtn.innerHTML = ICON_AUDIO_PAUSE;
+        if(audioRafId) cancelAnimationFrame(audioRafId);
+        audioRafId = requestAnimationFrame(updateAudioProgress);
+      });
+      audioEl.addEventListener('pause', () => {
+        playBtn.innerHTML = ICON_AUDIO_PLAY;
+        if(audioRafId){ cancelAnimationFrame(audioRafId); audioRafId = null; }
+      });
+      playBtn.addEventListener('click', () => {
+        if(audioEl.paused){
+          if(currentlyPlayingAudioEl && currentlyPlayingAudioEl !== audioEl) currentlyPlayingAudioEl.pause();
+          audioEl.play().catch(() => {});
+          currentlyPlayingAudioEl = audioEl;
+        } else {
+          audioEl.pause();
+        }
+      });
+      if(track){
+        track.addEventListener('click', (e) => {
+          if(!isFinite(audioEl.duration) || audioEl.duration <= 0) return;
+          const rect = track.getBoundingClientRect();
+          const ratio = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+          audioEl.currentTime = ratio * audioEl.duration;
+        });
+      }
+    });
+  }
   // chips de reação embaixo da bolha (segurar a mensagem pra reagir — ver
   // openMessageReactionPicker/bindMessageLongPress). Cada pessoa só pode ter
   // UMA reação por mensagem (no máximo 2 chips numa DM, um por pessoa).
@@ -7850,12 +8079,19 @@ window.addEventListener('aura-firebase-ready', () => {
       </div>`;
     }
     if(msg.audio){
-      // toca com o player de áudio nativo do navegador — evita ter que
-      // montar um tocador (play/pause, barra de progresso) do zero
+      // tocador próprio (ver ICON_AUDIO_PLAY/PAUSE lá em cima) — sem isso, o
+      // player nativo do navegador colava um fundo clarinho + um menu de
+      // "..." por dentro da bolha, que não tem como tirar só com CSS
+      const durLabel = msg.audioDuration ? formatAudioDuration(msg.audioDuration) : '0:00';
       return `<div class="chat-row ${mine ? 'mine' : ''}" data-msg-id="${msg.id}" style="align-items:flex-end; gap:8px;">
         ${avatarSmall}
         <div class="chat-msg-col">
-          <div class="chat-audio-bubble"><audio controls preload="none" src="${msg.audio}"></audio></div>
+          <div class="chat-audio-bubble" data-audio-src="${msg.audio}">
+            <audio preload="metadata" src="${msg.audio}" style="display:none;"></audio>
+            <button class="chat-audio-play-btn" type="button" title="Tocar áudio">${ICON_AUDIO_PLAY}</button>
+            <div class="chat-audio-track"><div class="chat-audio-track-fill"></div></div>
+            <span class="chat-audio-time">${durLabel}</span>
+          </div>
           ${msg.text ? `<div class="chat-bubble" style="margin-top:6px;">${escapeHtml(msg.text)}</div>` : ''}
           ${reactionsHtml}
         </div>
@@ -7953,11 +8189,11 @@ window.addEventListener('aura-firebase-ready', () => {
           <button class="chat-compose-image-remove" id="chatImageRemove" title="Remover imagem">✕</button>
         </div>
         <div class="chat-compose" style="flex-shrink:0;" id="chatComposeRow">
-          <button class="icon-btn" id="chatImageBtn" title="Adicionar foto">${ICON_IMAGE}</button>
+          <button class="icon-btn chat-compose-plus" id="chatImageBtn" title="Adicionar foto">${ICON_PLUS}</button>
           <input type="file" id="chatImageInput" accept="image/*" style="display:none;" />
           <input type="text" id="chatInput" class="chat-input" maxlength="500" placeholder="Escreva uma mensagem..." />
           <button class="icon-btn" id="chatMicBtn" title="Gravar áudio">${ICON_MIC}</button>
-          <button class="icon-btn" id="chatSendBtn" title="Enviar">${ICON_ARROW_RIGHT}</button>
+          <button class="icon-btn" id="chatSendBtn" title="Enviar" style="display:none;">${ICON_ARROW_RIGHT}</button>
         </div>
         <div class="chat-recording-row" id="chatRecordingRow" style="display:none; flex-shrink:0;">
           <button class="icon-btn chat-recording-cancel" id="chatRecordingCancelBtn" title="Cancelar">${ICON_TRASH}</button>
@@ -7995,6 +8231,7 @@ window.addEventListener('aura-firebase-ready', () => {
         : msgs.map(m => chatBubbleHtml(m, other)).join(''));
       bindSharedPostClicks(msgsEl);
       bindMessageLongPress(msgsEl, otherId, currentMsgs, () => reloadMessages(true));
+      initAudioPlayers(msgsEl);
       if(scroll){
         scrollToBottom();
         // fotos, áudios com capa e frequências/stories compartilhados dentro das
@@ -8111,6 +8348,7 @@ window.addEventListener('aura-firebase-ready', () => {
         }
         chatImagePreviewImg.src = chatImageData;
         chatImagePreview.style.display = 'block';
+        syncSendToggle();
       }catch(err){
         showToast('Não deu pra carregar essa imagem. Tente outra.');
       }
@@ -8119,13 +8357,21 @@ window.addEventListener('aura-firebase-ready', () => {
       chatImageData = null;
       chatImageInput.value = '';
       chatImagePreview.style.display = 'none';
+      syncSendToggle();
     });
+
+    // microfone vira setinha de enviar assim que tem texto (ou foto anexada)
+    // — igual Instagram/WhatsApp — em vez dos dois aparecerem juntos o tempo
+    // todo. bindComposeSendToggle está definido lá em cima, perto do chat de
+    // grupo, que usa o mesmo padrão.
+    const syncSendToggle = bindComposeSendToggle(input, document.getElementById('chatMicBtn'), sendBtn, () => !!chatImageData);
 
     // avisa a outra pessoa que eu tô digitando — some sozinho se eu parar de
     // teclar por alguns segundos (ver setTypingState/isOtherTyping), sem
     // precisar de um "parei de digitar" explícito
     let typingStopTimer = null;
     input.addEventListener('input', () => {
+      syncSendToggle();
       setTypingState(otherId, true);
       if(typingStopTimer) clearTimeout(typingStopTimer);
       typingStopTimer = setTimeout(() => setTypingState(otherId, false), 3500);
@@ -8144,6 +8390,7 @@ window.addEventListener('aura-firebase-ready', () => {
         chatImageData = null;
         chatImageInput.value = '';
         chatImagePreview.style.display = 'none';
+        syncSendToggle();
         paintMessages(msgs, true);
       }catch(err){
         showToast('Não deu pra enviar. Tente de novo.');
@@ -8858,12 +9105,27 @@ window.addEventListener('aura-firebase-ready', () => {
       });
     });
   }
+  // liga/desliga os botões de "gravar áudio" (microfone) e "enviar" (seta) —
+  // igual Instagram/WhatsApp: só aparece a setinha de enviar quando tem
+  // alguma coisa pra mandar (texto ou imagem anexada); sem isso, o microfone
+  // some e dá lugar a ela. hasContentFn() diz se tem algo pra enviar agora.
+  function bindComposeSendToggle(inputEl, micBtn, sendBtn, hasContentFn){
+    function sync(){
+      const hasContent = inputEl.value.trim().length > 0 || (hasContentFn && hasContentFn());
+      if(micBtn) micBtn.style.display = hasContent ? 'none' : '';
+      sendBtn.style.display = hasContent ? '' : 'none';
+    }
+    sync();
+    return sync;
+  }
   function renderGroupDetail(groupId){
     if(!profiles[ME_ID]){ view = { name: 'onboard' }; return renderOnboard(); }
+    const groupTab = view.groupTab || 'feed';
+    const isChatTab = groupTab === 'chat';
     const content = renderShellAndGetContent();
-    content.innerHTML = `
-      <div id="groupContent" class="loading" style="padding:30px 0;">carregando grupo...</div>
-    `;
+    content.innerHTML = isChatTab
+      ? `<div id="groupContent" class="loading" style="flex:1; display:flex; flex-direction:column; min-height:0;">carregando chat...</div>`
+      : `<div id="groupContent" class="loading" style="padding:30px 0;">carregando grupo...</div>`;
 
     loadGroup(groupId).then(group => {
       const el = document.getElementById('groupContent');
@@ -8874,11 +9136,144 @@ window.addEventListener('aura-firebase-ready', () => {
         el.innerHTML = `<h3>Grupo não encontrado</h3><p>Você não faz parte desse grupo, ou ele não existe mais.</p>`;
         return;
       }
+      // guarda nome/foto pro cabeçalho da tela cheia do chat (ver
+      // groupHeaderCache lá em cima) e, se o cabeçalho já tinha sido
+      // desenhado sem esses dados (loadGroup ainda não tinha voltado quando
+      // a casca foi montada), atualiza ele agora no lugar
+      groupHeaderCache[groupId] = { name: group.name, photo: group.photo || null };
+      if(isChatTab){
+        const hAvatarWrap = document.getElementById('groupChatHeaderAvatarWrap');
+        if(hAvatarWrap && group.photo && !hAvatarWrap.querySelector('img')) hAvatarWrap.innerHTML = `<img src="${group.photo}" style="width:100%;height:100%;object-fit:cover;" />`;
+        const hName = document.getElementById('groupChatHeaderName');
+        if(hName) hName.textContent = group.name;
+      }
+      const isOwner = group.ownerId === ME_ID;
+
+      // ---------- aba de chat: tela cheia, igual a conversa 1-a-1 (sem a
+      // foto/descrição/abas do grupo em cima — só a lista de mensagens e a
+      // caixa de escrever, sempre grudada no rodapé de verdade) ----------
+      if(isChatTab){
+        el.removeAttribute('style');
+        el.className = 'chat-screen';
+        el.innerHTML = `
+          <div id="groupChatMessages" class="chat-messages loading">carregando chat...</div>
+          <div id="groupChatImagePreview" class="chat-compose-image-preview" style="flex-shrink:0;">
+            <img id="groupChatImagePreviewImg" alt="" />
+            <button class="chat-compose-image-remove" id="groupChatImageRemove" title="Remover imagem">✕</button>
+          </div>
+          <div class="chat-compose" style="flex-shrink:0;" id="groupChatComposeRow">
+            <button class="icon-btn chat-compose-plus" id="groupChatImageBtn" title="Adicionar foto">${ICON_PLUS}</button>
+            <input type="file" id="groupChatImageInput" accept="image/*" style="display:none;" />
+            <input type="text" id="groupChatInput" class="chat-input" maxlength="500" placeholder="Escreva pro grupo..." />
+            <button class="icon-btn" id="groupChatSendBtn" title="Enviar" style="display:none;">${ICON_ARROW_RIGHT}</button>
+          </div>
+        `;
+        function bindGroupChatAuthorLinks(container){
+          container.querySelectorAll('.group-chat-author-link').forEach(linkEl => {
+            linkEl.addEventListener('click', () => { view = { name: 'profile', id: linkEl.dataset.id }; render(); });
+          });
+        }
+        function scrollGroupChatToBottom(){
+          const msgsElInner = document.getElementById('groupChatMessages');
+          if(msgsElInner) msgsElInner.scrollTop = msgsElInner.scrollHeight;
+        }
+        loadGroupChat(groupId).then(msgs => {
+          if(!(view.name === 'group' && view.id === groupId && (view.groupTab || 'feed') === 'chat')) return;
+          const msgsEl = document.getElementById('groupChatMessages');
+          if(!msgsEl) return;
+          msgsEl.classList.remove('loading');
+          msgsEl.innerHTML = msgs.length === 0
+            ? `<div class="feed-empty">Nenhuma mensagem ainda nesse grupo. Diga oi.</div>`
+            : msgs.map(groupChatBubbleHtml).join('');
+          bindGroupChatAuthorLinks(msgsEl);
+          scrollGroupChatToBottom();
+        }).catch(() => {
+          const msgsEl = document.getElementById('groupChatMessages');
+          if(msgsEl){ msgsEl.classList.remove('loading'); msgsEl.innerHTML = `<div class="feed-empty">Não deu pra carregar o chat.</div>`; }
+        });
+
+        const gcInput = document.getElementById('groupChatInput');
+        const gcSendBtn = document.getElementById('groupChatSendBtn');
+        const gcImageBtn = document.getElementById('groupChatImageBtn');
+        const gcImageInput = document.getElementById('groupChatImageInput');
+        const gcImagePreview = document.getElementById('groupChatImagePreview');
+        const gcImagePreviewImg = document.getElementById('groupChatImagePreviewImg');
+        const gcImageRemove = document.getElementById('groupChatImageRemove');
+        let gcImageData = null;
+        const syncGcSendToggle = bindComposeSendToggle(gcInput, null, gcSendBtn, () => !!gcImageData);
+        gcInput.addEventListener('input', syncGcSendToggle);
+
+        gcImageBtn.addEventListener('click', () => gcImageInput.click());
+        gcImageInput.addEventListener('change', async (e) => {
+          const file = e.target.files[0];
+          if(!file) return;
+          try{
+            if(file.type === 'image/gif'){
+              if(file.size > 700 * 1024){
+                showToast('Esse GIF é grande demais (máx. ~700KB). Escolha um menor.', 3500);
+                gcImageInput.value = '';
+                return;
+              }
+              gcImageData = await fileToRawDataUrl(file);
+            } else {
+              const attempts = [[700, 0.65], [550, 0.5], [400, 0.35]];
+              let result = null;
+              for(const [dim, q] of attempts){
+                result = await resizeImageDataUrl(file, dim, q);
+                if(result.length < 350000) break;
+              }
+              gcImageData = result;
+            }
+            gcImagePreviewImg.src = gcImageData;
+            gcImagePreview.style.display = 'block';
+            syncGcSendToggle();
+          }catch(err){
+            showToast('Não deu pra carregar essa imagem. Tente outra.');
+          }
+        });
+        gcImageRemove.addEventListener('click', () => {
+          gcImageData = null;
+          gcImageInput.value = '';
+          gcImagePreview.style.display = 'none';
+          syncGcSendToggle();
+        });
+
+        async function doSendGroupMsg(){
+          const text = gcInput.value.trim();
+          if(!text && !gcImageData) return;
+          gcInput.disabled = true;
+          gcSendBtn.disabled = true;
+          try{
+            const msgs = await sendGroupMessage(groupId, text, gcImageData);
+            gcInput.value = '';
+            gcImageData = null;
+            gcImageInput.value = '';
+            gcImagePreview.style.display = 'none';
+            syncGcSendToggle();
+            const msgsEl = document.getElementById('groupChatMessages');
+            if(msgsEl){
+              msgsEl.classList.remove('loading');
+              msgsEl.innerHTML = msgs.map(groupChatBubbleHtml).join('');
+              bindGroupChatAuthorLinks(msgsEl);
+              scrollGroupChatToBottom();
+            }
+          }catch(err){
+            showToast('Não deu pra enviar. Tente de novo.');
+          }
+          gcInput.disabled = false;
+          gcSendBtn.disabled = false;
+          gcInput.focus();
+        }
+        gcSendBtn.addEventListener('click', doSendGroupMsg);
+        gcInput.addEventListener('keydown', (e) => { if(e.key === 'Enter') doSendGroupMsg(); });
+        return;
+      }
+
+      // ---------- abas "Frequências" e "Ranking": página normal do grupo,
+      // com foto, descrição, contagem de membros e o seletor de abas ----------
       el.removeAttribute('style');
       el.className = '';
       const memberCount = (group.memberIds || []).length;
-      const isOwner = group.ownerId === ME_ID;
-      const groupTab = view.groupTab || 'feed';
       const groupPosts = feedCache.filter(p => p.groupId === groupId).sort((a, b) => b.createdAt - a.createdAt);
       const memberRanked = (group.memberIds || [])
         .map(id => ({ p: profiles[id], stats: ratingsCache[id] || { avg: null, count: 0 } }))
@@ -8912,20 +9307,6 @@ window.addEventListener('aura-firebase-ready', () => {
           <div class="rank-panel">
             <div class="rank-list">${memberRanked.length === 0 ? `<div class="feed-empty">Ninguém do grupo tem aura avaliada ainda.</div>` : memberRanked.map((x, i) => rankRowHtml(x.p, x.stats, i)).join('')}</div>
           </div>
-        ` : groupTab === 'chat' ? `
-          <div id="groupChatMessages" class="chat-messages loading" style="min-height:260px;">carregando chat...</div>
-          <div id="groupChatComposeRow">
-            <div id="groupChatImagePreview" class="chat-compose-image-preview">
-              <img id="groupChatImagePreviewImg" alt="" />
-              <button class="chat-compose-image-remove" id="groupChatImageRemove" title="Remover imagem">✕</button>
-            </div>
-            <div class="chat-compose">
-              <button class="icon-btn" id="groupChatImageBtn" title="Adicionar foto">${ICON_IMAGE}</button>
-              <input type="file" id="groupChatImageInput" accept="image/*" style="display:none;" />
-              <input type="text" id="groupChatInput" class="chat-input" maxlength="500" placeholder="Escreva pro grupo..." />
-              <button class="icon-btn" id="groupChatSendBtn" title="Enviar">${ICON_ARROW_RIGHT}</button>
-            </div>
-          </div>
         ` : `
           <div class="feed-compose">
             <textarea id="groupPostText" maxlength="240" placeholder="Escreva pro grupo..."></textarea>
@@ -8945,101 +9326,6 @@ window.addEventListener('aura-firebase-ready', () => {
         document.querySelectorAll('.rank-row').forEach(rowEl => {
           rowEl.addEventListener('click', () => { view = { name: 'profile', id: rowEl.dataset.id }; render(); });
         });
-      }
-      if(groupTab === 'chat'){
-        function bindGroupChatAuthorLinks(container){
-          container.querySelectorAll('.group-chat-author-link').forEach(el => {
-            el.addEventListener('click', () => { view = { name: 'profile', id: el.dataset.id }; render(); });
-          });
-        }
-        function scrollGroupChatToBottom(){
-          const el = document.getElementById('groupChatMessages');
-          if(el) el.scrollTop = el.scrollHeight;
-        }
-        loadGroupChat(groupId).then(msgs => {
-          if(!(view.name === 'group' && view.id === groupId && (view.groupTab || 'feed') === 'chat')) return;
-          const msgsEl = document.getElementById('groupChatMessages');
-          if(!msgsEl) return;
-          msgsEl.classList.remove('loading');
-          msgsEl.innerHTML = msgs.length === 0
-            ? `<div class="feed-empty">Nenhuma mensagem ainda nesse grupo. Diga oi.</div>`
-            : msgs.map(groupChatBubbleHtml).join('');
-          bindGroupChatAuthorLinks(msgsEl);
-          scrollGroupChatToBottom();
-        }).catch(() => {
-          const msgsEl = document.getElementById('groupChatMessages');
-          if(msgsEl){ msgsEl.classList.remove('loading'); msgsEl.innerHTML = `<div class="feed-empty">Não deu pra carregar o chat.</div>`; }
-        });
-
-        const gcInput = document.getElementById('groupChatInput');
-        const gcSendBtn = document.getElementById('groupChatSendBtn');
-        const gcImageBtn = document.getElementById('groupChatImageBtn');
-        const gcImageInput = document.getElementById('groupChatImageInput');
-        const gcImagePreview = document.getElementById('groupChatImagePreview');
-        const gcImagePreviewImg = document.getElementById('groupChatImagePreviewImg');
-        const gcImageRemove = document.getElementById('groupChatImageRemove');
-        let gcImageData = null;
-
-        gcImageBtn.addEventListener('click', () => gcImageInput.click());
-        gcImageInput.addEventListener('change', async (e) => {
-          const file = e.target.files[0];
-          if(!file) return;
-          try{
-            if(file.type === 'image/gif'){
-              if(file.size > 700 * 1024){
-                showToast('Esse GIF é grande demais (máx. ~700KB). Escolha um menor.', 3500);
-                gcImageInput.value = '';
-                return;
-              }
-              gcImageData = await fileToRawDataUrl(file);
-            } else {
-              const attempts = [[700, 0.65], [550, 0.5], [400, 0.35]];
-              let result = null;
-              for(const [dim, q] of attempts){
-                result = await resizeImageDataUrl(file, dim, q);
-                if(result.length < 350000) break;
-              }
-              gcImageData = result;
-            }
-            gcImagePreviewImg.src = gcImageData;
-            gcImagePreview.style.display = 'block';
-          }catch(err){
-            showToast('Não deu pra carregar essa imagem. Tente outra.');
-          }
-        });
-        gcImageRemove.addEventListener('click', () => {
-          gcImageData = null;
-          gcImageInput.value = '';
-          gcImagePreview.style.display = 'none';
-        });
-
-        async function doSendGroupMsg(){
-          const text = gcInput.value.trim();
-          if(!text && !gcImageData) return;
-          gcInput.disabled = true;
-          gcSendBtn.disabled = true;
-          try{
-            const msgs = await sendGroupMessage(groupId, text, gcImageData);
-            gcInput.value = '';
-            gcImageData = null;
-            gcImageInput.value = '';
-            gcImagePreview.style.display = 'none';
-            const msgsEl = document.getElementById('groupChatMessages');
-            if(msgsEl){
-              msgsEl.classList.remove('loading');
-              msgsEl.innerHTML = msgs.map(groupChatBubbleHtml).join('');
-              bindGroupChatAuthorLinks(msgsEl);
-              scrollGroupChatToBottom();
-            }
-          }catch(err){
-            showToast('Não deu pra enviar. Tente de novo.');
-          }
-          gcInput.disabled = false;
-          gcSendBtn.disabled = false;
-          gcInput.focus();
-        }
-        gcSendBtn.addEventListener('click', doSendGroupMsg);
-        gcInput.addEventListener('keydown', (e) => { if(e.key === 'Enter') doSendGroupMsg(); });
       }
       const groupFeedEl = document.getElementById('groupFeedList');
       if(groupFeedEl) bindFeedListEvents(groupFeedEl);
