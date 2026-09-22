@@ -9,7 +9,7 @@
      está publicado de verdade no servidor. IMPORTANTE: sempre que eu (Claude)
      entregar uma atualização nova desse arquivo, preciso mudar esse valor
      aqui, senão essa checagem não detecta nada de novo. -->
-<meta name="aura-build" content="20260922-16" />
+<meta name="aura-build" content="20260922-18" />
 <script>
 // autocorreção de cache: em alguns celulares (principalmente apps "adicionados
 // à tela de início"), o navegador guarda uma cópia velha da página e não busca
@@ -540,18 +540,19 @@
      próximos uns dos outros. É essa técnica específica que dá aquele
      "estouro de sol" nítido e vibrante, mesmo bem pequeno — por isso as
      tentativas com linear/conic-gradient nunca chegavam perto.
-     Cores: paleta vaporwave/cyberpunk pedida — começa no roxo do próprio
-     app (--violet, #7C3AED) EM CIMA e evolui pra magenta/rosa vibrante
-     embaixo. O ponto de ancoragem do radial (circle at X% Y%) é onde a
-     PRIMEIRA cor (0%) fica concentrada — por isso ancorado perto do topo
-     (Y negativo) pra jogar o roxo pra cima, ao contrário da receita
-     original do Insta que ancora embaixo. */
+     Cores: clima "Black Mirror" — começa no roxo do próprio app (--violet,
+     #7C3AED) EM CIMA e vai dissolvendo pra chumbo/cinza-metálico até sumir
+     em preto embaixo (pedido específico do usuário, troca da fase dourada).
+     O ponto de ancoragem do radial (circle at X% Y%) é onde a PRIMEIRA cor
+     (0%) fica concentrada — por isso ancorado perto do topo (Y negativo)
+     pra jogar o roxo pra cima, ao contrário da receita original do Insta
+     que ancora embaixo. */
   .story-ring.unseen::before{
     content:'';
     position:absolute;
     inset:0;
     border-radius:50%;
-    background:radial-gradient(circle at 70% -10%, #7C3AED 0%, #7C3AED 8%, #C026D3 45%, #EC4899 70%, #FF6EC7 95%);
+    background:radial-gradient(circle at 70% -10%, #7C3AED 0%, #7C3AED 8%, #5B4B7A 40%, #3A3742 68%, #121014 95%);
     /* mask redundante de propósito: além do border-radius, isso força o
        Safari a usar o pipeline de máscara dele pra recortar o círculo, que
        é o caminho que realmente não deixa vazar nenhum pixel reto na borda. */
@@ -3671,8 +3672,13 @@ window.addEventListener('aura-firebase-ready', () => {
     if(!state) return avatarHtml(p, size, showOnline);
     const ringPad = Math.max(2, Math.round(size * 0.06));
     const innerSize = size - ringPad * 2;
+    // gapWidth aqui é o mesmo "espacinho" do anel de story do feed/grupo —
+    // sem passar isso como ringOverride pro avatarHtml(), a foto ficava
+    // colada direto no degradê (o border padrão do avatarHtml é só 1px e
+    // nem cor de fundo é, some visualmente).
+    const gapWidth = Math.max(1.5, Math.round(size * 0.045));
     return `<div class="story-ring ${state}" data-story-avatar="${p.id}" style="width:${size}px; height:${size}px; padding:${ringPad}px; box-sizing:border-box; cursor:pointer;">
-      <div style="width:${innerSize}px; height:${innerSize}px;">${avatarHtml(p, innerSize, showOnline)}</div>
+      <div style="width:${innerSize}px; height:${innerSize}px;">${avatarHtml(p, innerSize, showOnline, {color:'var(--bg)', width:gapWidth+'px'})}</div>
     </div>`;
   }
   function storiesBarHtml(){
